@@ -28,15 +28,15 @@ def choose_action(fencer: Fencer):
 #INTERACTION MATRIX
 INTERACTION_MATRIX = {
     ("attack", "attack"): (0.0, 0.0),
-    ("attack", "parry"): (-0.1, +0.1),
-    ("attack", "feint"): (+0.1, -0.1),
+    ("attack", "parry"): (-0.5, +0.5),
+    ("attack", "feint"): (+0.5, -0.5),
 
-    ("parry", "attack"): (+0.1, -0.1),
+    ("parry", "attack"): (+0.5, -0.5),
     ("parry", "parry"): (0.0, 0.0),
-    ("parry", "feint"): (-0.1, +0.1),
+    ("parry", "feint"): (-0.5, +0.5),
 
-    ("feint", "attack"): (-0.1, +0.1),
-    ("feint", "parry"): (+0.1, -0.1),
+    ("feint", "attack"): (-0.5, +0.5),
+    ("feint", "parry"): (+0.5, -0.5),
     ("feint", "feint"): (0.0, 0.0),
 }
 
@@ -50,23 +50,23 @@ def double_touch_chance(f1: Fencer, f2: Fencer):
 
     #French grips increase double touch chance
     if f1.grip == "french":
-        base += 0.05
+        base += 0.15
     if f2.grip == "french":
-        base += 0.05
+        base += 0.15
 
     #Defensive style decreases double touch chance
     if f1.style == "defensive":
-        base -= 0.02
+        base -= 0.12
     if f2.style == "defensive":
-        base -= 0.02
+        base -= 0.12
 
     #tempo style increases double touch chance
     if f1.style == "tempo":
-        base += 0.02
+        base += 0.12
     if f2.style == "tempo":
-        base += 0.02
+        base += 0.12
 
-    return base
+    return max(0.0, min(base,1.0))
 
 #SINGLE TOUCH RESOLUTION
 def resolve_touch(f1: Fencer, f2: Fencer):
@@ -121,13 +121,15 @@ def run_round(fencers: List[Fencer]) -> List[Fencer]:
 
     return winners
 
-def run_tournament(fencers: List[Fencer]) -> Fencer:
+def run_tournament(fencers: List[Fencer], verbose=False) -> Fencer:
     round_num = 1
 
     while len(fencers) > 1:
-        print(f"Round {round_num}: {len(fencers)} fencers")
+        if verbose:
+            print(f"Round {round_num}: {len(fencers)} fencers")
         fencers = run_round(fencers)
         round_num += 1
+
     return fencers[0]
 
 #GENERATION HELPER FUNCTIONS
@@ -141,18 +143,62 @@ def random_fencer(i):
 def generate_fencers(n):
     return [random_fencer(i) for i in range(n)]
 
+def benchmark(num_runs=5, num_fencers=64):
+    times = []
+    style_counts = {"aggressive": 0, "defensive": 0, "tempo": 0}
+    grip_counts = {"french": 0, "pistol": 0}
+    combo_counts = {} #Track (style, grip) pairs
+
+
+    for _ in range(num_runs):
+        fencers = generate_fencers(num_fencers)
+
+        start = time.perf_counter()
+        winner = run_tournament(fencers, verbose=False)
+        end = time.perf_counter()
+
+        times.append(end - start)
+
+        # Track winner attributes
+        style_counts[winner.style] += 1
+        grip_counts[winner.grip] += 1
+
+        # track combos
+        combo = (winner.style, winner.grip)
+        combo_counts[combo] = combo_counts.get(combo,0) + 1
+
+    avg_time = sum(times) / len(times)
+
+    print(f"\nRuns: {num_runs}")
+    print(f"Average Time: {avg_time:.6f} seconds")
+    print(f"Min Time: {min(times):.6f}")
+    print(f"Max Time: {max(times):.6f}")
+
+    print("\nWinner Style Distribution ")
+    for style, count in style_counts.items():
+        print(f"{style}: {count} ({count/num_runs:.2%})")
+
+    print("\nWinner Grip Distribution ")
+    for grip, count in grip_counts.items():
+        print(f"{grip}: {count} ({count/num_runs:.2%})")
+
+    print("\nWinner Style + Grip Combination Distribution")
+    for combo, count in combo_counts.items():
+        style, grip = combo
+        print(f"{style} + {grip}: {count} ({count/num_runs:.2%})")
+
 #main
 if __name__ == "__main__":
+    print("=== SINGLE RUN ===")
     fencers = generate_fencers(16)
+    winner = run_tournament(fencers, verbose=True)
+    print(f"Winner: {winner.name}")
+    print(f"Winner Stats: {winner.style}, {winner.grip}\n")
 
-    toc = time.time()
+    print("=== BENCHMARK ===")
+    benchmark(num_runs=5, num_fencers=16)
+    benchmark(num_runs=5, num_fencers=64)
+    benchmark(num_runs=5, num_fencers=256)
 
-    winner = run_tournament(fencers)
-
-    tic = time.time()
-
-    print(f"\nWinner: {winner.name}")
-    print(f"Winner Stats: {winner.style}, {winner.grip}")
-    print(f"\nExecution Time: {tic - toc:.4f} seconds")
-
+    
 
