@@ -1,7 +1,9 @@
 import random
 import time
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
+from multiprocessing import Pool, cpu_count
+
 
 #FENCER MODEL
 @dataclass
@@ -9,7 +11,15 @@ class Fencer:
     name: str
     style: str      #"aggressive", "defensive", "tempo"
     grip: str       #"french", "pistol"
-    #skill: float    # base skill level (0-1)
+    skill: float    # base skill level (0-1)
+    """
+    height
+    gender
+    age
+    confidence
+    weight
+    
+    """
 
 #STYLE LOGIC
 STYLE_WEIGHTS = {
@@ -40,9 +50,23 @@ INTERACTION_MATRIX = {
     ("feint", "feint"): (0.0, 0.0),
 }
 
-#GRIP MODIFIER
 def grip_modifier(f1: Fencer, f2: Fencer):
-    pass
+    mod1, mod2 = 0, 0
+
+    # pistol = more control (better parry)
+    # french = more reach (better attack)
+
+    if f1.grip == "pistol":
+        mod1 += 0.1
+    if f2.grip == "pistol":
+        mod2 += 0.1
+
+    if f1.grip == "french":
+        mod1 += 0.1
+    if f2.grip == "french":
+        mod2 += 0.1
+
+    return mod1, mod2
 
 #DOUBLE TOUCH CHANCE
 def double_touch_chance(f1: Fencer, f2: Fencer):
@@ -69,36 +93,29 @@ def double_touch_chance(f1: Fencer, f2: Fencer):
     return max(0.0, min(base,1.0))
 
 #SINGLE TOUCH RESOLUTION
-def resolve_touch(f1: Fencer, f2: Fencer):
+def resolve_touch(f1: Fencer, f2: Fencer) -> Tuple[int, int]:
     action1 = choose_action(f1)
     action2 = choose_action(f2)
 
-    #Double touch check
-    if random.random() < double_touch_chance(f1,f2):
-        return 1,1
-    
-    #base probability
-    score1 = 1
-    score2 = 1
+    if random.random() < double_touch_chance(f1, f2):
+        return 1, 1
 
-    #apply interaction matrix
+    score1 = f1.skill
+    score2 = f2.skill
+
     mod1, mod2 = INTERACTION_MATRIX[(action1, action2)]
     score1 += mod1
     score2 += mod2
 
-    #grip modifiers will go here but empty for now
+    g1, g2 = grip_modifier(f1, f2)
+    score1 += g1
+    score2 += g2
 
-    #prevent negative probability
     score1 = max(score1, 0.01)
-    score2=  max(score2, 0.01)
+    score2 = max(score2, 0.01)
 
     total = score1 + score2
-    r = random.random()
-
-    if r < score1 / total:
-        return 1, 0
-    else:
-        return 0, 1
+    return (1, 0) if random.random() < (score1 / total) else (0, 1)
     
 #BOUT LOGIC
 def simulate_bout(f1: Fencer, f2: Fencer, target = 15):
@@ -132,12 +149,28 @@ def run_tournament(fencers: List[Fencer], verbose=False) -> Fencer:
 
     return fencers[0]
 
+# PARALLEL VERSION
+def simulate_match(pair):
+    f1, f2 = pair
+    return simulate_bout(f1, f2)
+
+
+def run_round_parallel(fencers: List[Fencer]) -> List[Fencer]:
+    random.shuffle(fencers)
+    pairs = [(fencers[i], fencers[i + 1]) for i in range(0, len(fencers), 2)]
+
+    with Pool(cpu_count()) as p:
+        winners = p.map(simulate_match, pairs)
+
+    return winners
+
 #GENERATION HELPER FUNCTIONS
-def random_fencer(i):
+def random_fencer(i: int) -> Fencer:
     return Fencer(
         name=f"Fencer_{i}",
         style=random.choice(["aggressive", "defensive", "tempo"]),
-        grip = random.choice(["french","pistol"])
+        grip=random.choice(["french", "pistol"]),
+        skill=random.uniform(0.7, 1.3),
     )
 
 def generate_fencers(n):
@@ -196,7 +229,7 @@ if __name__ == "__main__":
     print(f"Winner Stats: {winner.style}, {winner.grip}\n")
 
     print("=== BENCHMARK ===")
-    benchmark(num_runs=5, num_fencers=16)
+    benchmark(num_runs=5, num_fencers=16384)
     benchmark(num_runs=5, num_fencers=64)
     benchmark(num_runs=5, num_fencers=256)
 
